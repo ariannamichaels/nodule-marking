@@ -1,0 +1,11 @@
+## Table 3. Surgical Characteristics & Outcomes
+
+| **Characteristic** | **RATS Marked (N=38)** | **RATS Unmarked (N=45)** | **RATS *P*** | **RATS Adjusted Effect (95% CI)** | **RATS Adj. *P*** | **VATS Marked (N=33)** | **VATS Unmarked (N=75)** | **VATS *P*** | **VATS Adjusted Effect (95% CI)** | **VATS Adj. *P*** | **Pooled Marked (N=71)** | **Pooled Unmarked (N=120)** | **Pooled *P*** | **Pooled Adjusted Effect (95% CI)** | **Pooled Adj. *P*** |
+|-------------------|----------------------|------------------------|------------|------------------------------|-----------------|----------------------|------------------------|------------|------------------------------|-----------------|------------------------|---------------------------|--------------|-------------------------------------|-------------------|
+| Mean length of stay, days (SD) | 3.5 (2.2) | 3.9 (2.6) | .62 | β: -0.8 (-1.8 to 0.2) | .13 | 3.4 (2.6) | 3.3 (2.4) | .83 | β: -0.1 (-1.5 to 1.2) | .85 | 3.4 (2.4) | 3.5 (2.5) | .77 | β: -0.4 (-1.3 to 0.4) | .32 |
+| Persistent air leak (%) | 2 (5) | 9 (20) | .06 | OR: 0.07 (0.01-0.66) | .02 | 3 (9) | 7 (9) | >.9 | OR: 0.98 (0.18-5.53) | .99 | 5 (7) | 16 (13) | .23 | OR: 0.28 (0.06-1.27) | .10 |
+| Incision to closing time, min (SD) | 188 (64.8) | 204 (138.3) | .79 | β: -22.5 (-82.6 to 37.5) | .46 | 118.2 (74.4) | 105.9 (53.9) | .76 | β: 17.5 (-22.6 to 57.6) | .39 | 155.6 (77.3) | 142.7 (105.6) | .10 | β: -1.2 (-36.1 to 33.7) | .95 |
+| Localization failure (%) | 5 (13) | 4 (9) | .73 | OR: 0.88 (0.14-5.31) | .88 | 1 (3) | 4 (5) | >.9 | OR: 0.5 (0.05-4.98) | .55 | 6 (8) | 8 (7) | .78 | OR: 0.73 (0.19-2.84) | .65 |
+| Conversion to open (%) | 4 (11) | 4 (9) | >.9 | OR: 0.66 (0.1-4.36) | .66 | 3 (9) | 8 (11) | >.9 | OR: 0.56 (0.1-3.07) | .50 | 7 (10) | 12 (10) | >.9 | OR: 0.62 (0.17-2.25) | .46 |
+
+**Note:** Adjusted effects are from IPTW-weighted regression models. OR = Odds Ratio for binary outcomes; β = regression coefficient for continuous outcomes. Pooled analysis adjusted for surgical approach (RATS vs VATS). Common support trimming applied.
