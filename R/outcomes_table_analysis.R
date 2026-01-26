@@ -41,6 +41,7 @@
 library(tidyverse)
 library(broom)
 library(survey)
+library(Hmisc)
 
 cat(rep("=", 80), "\n", sep="")
 cat("SURGICAL AND PATHOLOGY OUTCOMES TABLE ANALYSIS\n")
@@ -145,9 +146,21 @@ cat(rep("=", 80), "\n", sep="")
 cat("PROPENSITY SCORE MODEL\n")
 cat(rep("=", 80), "\n\n")
 
-# Define covariates (subset relevant to pathology outcomes)
-ps_covariates <- c("age", "is_f", "nod_size", "dist_from_pleur_distal",
-                   "is_solid", "smoking_status", "emphysema_on_ct")
+# Define covariates (12 covariates matching IPTW_complete_analysis.R)
+ps_covariates <- c(
+  "age",                        # Age
+  "is_f",                       # Sex (Female)
+  "nod_size",                   # Nodule size
+  "dist_from_pleur_prox",       # Depth - proximal edge distance from pleura
+  "dist_from_pleur_distal",     # Depth - distal edge distance from pleura
+  "fev_perc_pred",              # FEV1 % predicted
+  "dlco_perc_pred",             # DLCO % predicted
+  "fvc_perc_pred",              # FVC % predicted
+  "smoking_status",             # Smoking status
+  "prior_thoracic_radiation",   # Prior thoracic radiation
+  "prior_thoracic_surgery",     # Prior thoracic surgery
+  "is_solid"                    # Nodule consistency (solid vs subsolid)
+)
 
 # Create complete case dataset for PS model
 df_ps <- df %>%
@@ -198,11 +211,52 @@ df <- df %>%
     )
   )
 
+# Calculate stabilized weights (for comparison)
+# Stabilized weights reduce variance while maintaining balance
+# Formula: SW = P(T=t) / P(T=t|X) where t is observed treatment
+marginal_prob_marked <- mean(df$marked, na.rm = TRUE)
+
+df <- df %>%
+  mutate(
+    stabilized_weight = case_when(
+      !in_common_support ~ NA_real_,
+      marked ~ marginal_prob_marked / propensity_score,
+      TRUE ~ (1 - marginal_prob_marked) / (1 - propensity_score)
+    )
+  )
+
 cat("IPTW Weight Summary (trimmed sample):\n")
-cat("  Mean:", round(mean(df$iptw_weight, na.rm = TRUE), 3), "\n")
-cat("  SD:", round(sd(df$iptw_weight, na.rm = TRUE), 3), "\n")
-cat("  Range: [", round(min(df$iptw_weight, na.rm = TRUE), 3), ", ",
-    round(max(df$iptw_weight, na.rm = TRUE), 3), "]\n\n", sep="")
+cat("  ATE Weights (unstabilized):\n")
+cat("    Mean:", round(mean(df$iptw_weight, na.rm = TRUE), 3), "\n")
+cat("    SD:", round(sd(df$iptw_weight, na.rm = TRUE), 3), "\n")
+cat("    Range: [", round(min(df$iptw_weight, na.rm = TRUE), 3), ", ",
+    round(max(df$iptw_weight, na.rm = TRUE), 3), "]\n", sep="")
+
+cat("  Stabilized Weights (used in outcome analyses):\n")
+cat("    Mean:", round(mean(df$stabilized_weight, na.rm = TRUE), 3), "\n")
+cat("    SD:", round(sd(df$stabilized_weight, na.rm = TRUE), 3), "\n")
+cat("    Range: [", round(min(df$stabilized_weight, na.rm = TRUE), 3), ", ",
+    round(max(df$stabilized_weight, na.rm = TRUE), 3), "]\n\n", sep="")
+
+cat("NOTE: Stabilized weights reduce variance and improve precision while\n")
+cat("      maintaining the same covariate balance and point estimates as\n")
+cat("      unstabilized ATE weights. Used for all outcome analyses.\n\n")
+
+# Calculate Effective Sample Size (ESS)
+df_trimmed_temp <- df %>% filter(in_common_support)
+ess_marked <- sum(df_trimmed_temp$iptw_weight[df_trimmed_temp$marked])^2 /
+              sum(df_trimmed_temp$iptw_weight[df_trimmed_temp$marked]^2)
+ess_unmarked <- sum(df_trimmed_temp$iptw_weight[!df_trimmed_temp$marked])^2 /
+                sum(df_trimmed_temp$iptw_weight[!df_trimmed_temp$marked]^2)
+ess_total <- ess_marked + ess_unmarked
+
+cat("Effective Sample Size (ESS):\n")
+cat("  Marked:", round(ess_marked, 1),
+    "(efficiency:", round(100*ess_marked/sum(df_trimmed_temp$marked), 1), "%)  \n")
+cat("  Unmarked:", round(ess_unmarked, 1),
+    "(efficiency:", round(100*ess_unmarked/sum(!df_trimmed_temp$marked), 1), "%)  \n")
+cat("  Total:", round(ess_total, 1),
+    "(efficiency:", round(100*ess_total/nrow(df_trimmed_temp), 1), "%)  \n\n")
 
 # Create propensity score histogram
 cat("Creating propensity score distribution plot...\n")
@@ -224,10 +278,11 @@ ps_data <- ps_data %>%
                         paste0("Marked (n=", n_marked, ")"),
                         paste0("Unmarked (n=", n_unmarked, ")")))
 
-# Create overlapping histograms
+# Create overlapping histograms with bin width = 0.05
 ggplot(ps_data, aes(x = propensity_score, fill = Group)) +
   geom_histogram(aes(y = after_stat(density)),
-                 bins = 30, alpha = 0.75, position = "identity", color = "black", linewidth = 0.2) +
+                 binwidth = 0.05, boundary = 0, alpha = 0.75, position = "identity",
+                 color = "black", linewidth = 0.2) +
   geom_vline(xintercept = ps_marked_min, linetype = "dashed", color = "black", linewidth = 1) +
   geom_vline(xintercept = ps_unmarked_max, linetype = "dashed", color = "black", linewidth = 1) +
   annotate("text", x = ps_marked_min, y = Inf, label = paste0("Min marked\n(", round(ps_marked_min, 3), ")"),
@@ -249,14 +304,219 @@ ggplot(ps_data, aes(x = propensity_score, fill = Group)) +
     legend.position = c(0.9, 0.85),
     legend.direction = "vertical",
     legend.title = element_blank(),
-    legend.background = element_rect(fill = "white", color = NA)
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key.spacing.y = unit(0.3, "cm")
   )
 
 dev.off()
 cat("Saved: propensity_score_distribution.png\n\n")
 
 # ==============================================================================
-# 5. ANALYSIS FUNCTIONS
+# 5. COVARIATE BALANCE ASSESSMENT
+# ==============================================================================
+
+cat(rep("=", 80), "\n", sep="")
+cat("COVARIATE BALANCE ASSESSMENT\n")
+cat(rep("=", 80), "\n\n")
+
+# Function to calculate SMD for continuous variables
+calculate_smd_continuous <- function(data, var, treatment_var) {
+  treated <- data[[var]][data[[treatment_var]]]
+  control <- data[[var]][!data[[treatment_var]]]
+  mean_diff <- mean(treated, na.rm = TRUE) - mean(control, na.rm = TRUE)
+  pooled_sd <- sqrt((var(treated, na.rm = TRUE) + var(control, na.rm = TRUE)) / 2)
+  smd <- mean_diff / pooled_sd
+  return(smd)
+}
+
+# Function to calculate SMD for binary variables
+calculate_smd_binary <- function(data, var, treatment_var) {
+  treated <- data[[var]][data[[treatment_var]]]
+  control <- data[[var]][!data[[treatment_var]]]
+  prop_treated <- mean(treated, na.rm = TRUE)
+  prop_control <- mean(control, na.rm = TRUE)
+  pooled_sd <- sqrt((prop_treated * (1 - prop_treated) +
+                     prop_control * (1 - prop_control)) / 2)
+  smd <- (prop_treated - prop_control) / pooled_sd
+  return(smd)
+}
+
+# Function to calculate weighted SMD for continuous variables
+calculate_weighted_smd_continuous <- function(data, var, treatment_var, weight_var) {
+  treated <- data[[var]][data[[treatment_var]]]
+  control <- data[[var]][!data[[treatment_var]]]
+  wt_treated <- data[[weight_var]][data[[treatment_var]]]
+  wt_control <- data[[weight_var]][!data[[treatment_var]]]
+
+  mean_treated <- weighted.mean(treated, wt_treated, na.rm = TRUE)
+  mean_control <- weighted.mean(control, wt_control, na.rm = TRUE)
+  var_treated <- Hmisc::wtd.var(treated, wt_treated, na.rm = TRUE)
+  var_control <- Hmisc::wtd.var(control, wt_control, na.rm = TRUE)
+  pooled_sd <- sqrt((var_treated + var_control) / 2)
+  smd <- (mean_treated - mean_control) / pooled_sd
+  return(smd)
+}
+
+# Function to calculate weighted SMD for binary variables
+calculate_weighted_smd_binary <- function(data, var, treatment_var, weight_var) {
+  treated <- data[[var]][data[[treatment_var]]]
+  control <- data[[var]][!data[[treatment_var]]]
+  wt_treated <- data[[weight_var]][data[[treatment_var]]]
+  wt_control <- data[[weight_var]][!data[[treatment_var]]]
+
+  prop_treated <- weighted.mean(treated, wt_treated, na.rm = TRUE)
+  prop_control <- weighted.mean(control, wt_control, na.rm = TRUE)
+  pooled_sd <- sqrt((prop_treated * (1 - prop_treated) +
+                     prop_control * (1 - prop_control)) / 2)
+  smd <- (prop_treated - prop_control) / pooled_sd
+  return(smd)
+}
+
+# Identify continuous vs binary variables
+continuous_vars <- c("age", "nod_size", "dist_from_pleur_prox", "dist_from_pleur_distal",
+                     "fev_perc_pred", "dlco_perc_pred", "fvc_perc_pred")
+binary_vars <- c("is_f", "smoking_status", "prior_thoracic_radiation",
+                 "prior_thoracic_surgery", "is_solid")
+
+# Create dataset for balance assessment (trimmed sample)
+df_balance <- df %>% filter(in_common_support)
+
+# Calculate SMD before and after weighting
+smd_results <- data.frame(
+  Variable = character(),
+  SMD_Unweighted = numeric(),
+  SMD_Weighted = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (var in ps_covariates) {
+  is_continuous <- var %in% continuous_vars
+
+  if (is_continuous) {
+    smd_unwt <- calculate_smd_continuous(df_balance, var, "marked")
+    smd_wt <- calculate_weighted_smd_continuous(df_balance, var, "marked", "iptw_weight")
+  } else {
+    smd_unwt <- calculate_smd_binary(df_balance, var, "marked")
+    smd_wt <- calculate_weighted_smd_binary(df_balance, var, "marked", "iptw_weight")
+  }
+
+  smd_results <- rbind(smd_results,
+                       data.frame(Variable = var,
+                                 SMD_Unweighted = smd_unwt,
+                                 SMD_Weighted = smd_wt))
+}
+
+# Display SMD table
+cat("Standardized Mean Differences (SMD) - Before and After IPTW:\n")
+cat(rep("-", 80), "\n", sep="")
+
+smd_table <- smd_results %>%
+  mutate(
+    Abs_SMD_Unweighted = abs(SMD_Unweighted),
+    Abs_SMD_Weighted = abs(SMD_Weighted),
+    Balanced_Before = ifelse(abs(SMD_Unweighted) < 0.1, "Yes", "No"),
+    Balanced_After = ifelse(abs(SMD_Weighted) < 0.1, "Yes", "No")
+  ) %>%
+  arrange(desc(Abs_SMD_Unweighted))
+
+print(smd_table, row.names = FALSE)
+cat("\n")
+
+# Summary statistics
+balanced_before <- sum(abs(smd_results$SMD_Unweighted) < 0.1)
+balanced_after <- sum(abs(smd_results$SMD_Weighted) < 0.1)
+
+cat("Balance Summary:\n")
+cat("  Covariates with |SMD| < 0.1 before IPTW:", balanced_before, "/",
+    nrow(smd_results), "(", round(100*balanced_before/nrow(smd_results), 1), "%)  \n")
+cat("  Covariates with |SMD| < 0.1 after IPTW:", balanced_after, "/",
+    nrow(smd_results), "(", round(100*balanced_after/nrow(smd_results), 1), "%)  \n\n")
+
+if (balanced_after == nrow(smd_results)) {
+  cat("✓ EXCELLENT: All covariates balanced after IPTW!\n\n")
+} else if (balanced_after >= 0.9 * nrow(smd_results)) {
+  cat("✓ GOOD: Most covariates balanced after IPTW\n\n")
+} else {
+  cat("⚠ WARNING: Some covariates remain imbalanced after IPTW\n")
+  cat("   Consider PS model refinement or alternative methods\n\n")
+}
+
+# Save SMD table
+write.csv(smd_table, "iptw_smd_balance_table.csv", row.names = FALSE)
+cat("SMD balance table saved to: iptw_smd_balance_table.csv\n\n")
+
+# Create Love Plot
+cat("Creating Love Plot...\n")
+
+# Prepare data for Love plot
+love_data <- smd_results %>%
+  mutate(
+    Variable_Label = case_when(
+      Variable == "age" ~ "Age",
+      Variable == "is_f" ~ "Female",
+      Variable == "nod_size" ~ "Nodule size",
+      Variable == "dist_from_pleur_prox" ~ "Proximal pleural distance",
+      Variable == "dist_from_pleur_distal" ~ "Distal pleural distance",
+      Variable == "fev_perc_pred" ~ "FEV1 % predicted",
+      Variable == "dlco_perc_pred" ~ "DLCO % predicted",
+      Variable == "fvc_perc_pred" ~ "FVC % predicted",
+      Variable == "smoking_status" ~ "Smoking status",
+      Variable == "prior_thoracic_radiation" ~ "Prior thoracic radiation",
+      Variable == "prior_thoracic_surgery" ~ "Prior thoracic surgery",
+      Variable == "is_solid" ~ "Solid nodule",
+      TRUE ~ Variable
+    )
+  )
+
+# Sort by Before IPTW ascending for Love plot (so largest appears at top)
+love_data_sorted <- love_data %>%
+  arrange(abs(SMD_Unweighted)) %>%
+  mutate(Variable_Label = factor(Variable_Label, levels = Variable_Label))
+
+# Reshape for plotting
+love_long_sorted <- love_data_sorted %>%
+  select(Variable_Label, SMD_Unweighted, SMD_Weighted) %>%
+  pivot_longer(cols = c(SMD_Unweighted, SMD_Weighted),
+               names_to = "Timing",
+               values_to = "SMD") %>%
+  mutate(
+    Timing = ifelse(Timing == "SMD_Unweighted", "Before IPTW", "After IPTW"),
+    Abs_SMD = abs(SMD)
+  )
+
+png("love_plot_smd.png", width = 10, height = 8, units = "in", res = 300)
+
+ggplot(love_long_sorted, aes(x = Abs_SMD, y = Variable_Label, color = Timing, shape = Timing)) +
+  geom_line(aes(group = Variable_Label), color = "gray70", linewidth = 0.5) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Before IPTW" = "#E41A1C", "After IPTW" = "#228B22")) +
+  scale_shape_manual(values = c("Before IPTW" = 16, "After IPTW" = 17)) +
+  scale_x_continuous(limits = c(0, 0.4),
+                     breaks = seq(0, 0.4, 0.1)) +
+  labs(
+    title = "Covariate Balance (Love Plot)",
+    x = "Absolute Standardized Mean Difference",
+    y = "",
+    color = "",
+    shape = ""
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = c(0.98, 0.88),
+    legend.justification = c(1, 1),
+    legend.direction = "vertical",
+    legend.title = element_blank(),
+    legend.background = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 10)
+  )
+
+dev.off()
+cat("Love plot saved to: love_plot_smd.png\n\n")
+
+# ==============================================================================
+# 6. ANALYSIS FUNCTIONS
 # ==============================================================================
 
 # Function to analyze binary outcome
@@ -307,7 +567,7 @@ analyze_binary <- function(data, outcome_var, group_label, include_approach = FA
   }
 
   iptw_result <- tryCatch({
-    survey_design <- svydesign(ids = ~1, weights = ~iptw_weight, data = data_trimmed)
+    survey_design <- svydesign(ids = ~1, weights = ~stabilized_weight, data = data_trimmed)
     model <- svyglm(iptw_formula, design = survey_design, family = quasibinomial())
     or <- exp(coef(model)["markedTRUE"])
     ci <- exp(confint(model)["markedTRUE", ])
@@ -392,7 +652,7 @@ analyze_continuous <- function(data, outcome_var, group_label, include_approach 
   }
 
   iptw_result <- tryCatch({
-    survey_design <- svydesign(ids = ~1, weights = ~iptw_weight, data = data_trimmed)
+    survey_design <- svydesign(ids = ~1, weights = ~stabilized_weight, data = data_trimmed)
     model <- svyglm(iptw_formula, design = survey_design)
     beta <- coef(model)["markedTRUE"]
     ci <- confint(model)["markedTRUE", ]
@@ -431,7 +691,7 @@ analyze_continuous <- function(data, outcome_var, group_label, include_approach 
 }
 
 # ==============================================================================
-# 6. HELPER FUNCTIONS FOR FORMATTING
+# 7. HELPER FUNCTIONS FOR FORMATTING
 # ==============================================================================
 
 format_p_table <- function(p) {
@@ -462,7 +722,7 @@ format_continuous_stat <- function(mean_val, sd_val) {
 }
 
 # ==============================================================================
-# 7. RUN TABLE 3 ANALYSES (SURGICAL OUTCOMES)
+# 8. RUN TABLE 3 ANALYSES (SURGICAL OUTCOMES)
 # ==============================================================================
 
 cat(rep("=", 80), "\n", sep="")
@@ -536,7 +796,7 @@ for (grp in groups) {
 }
 
 # ==============================================================================
-# 8. EXPORT TABLE 3 (SURGICAL OUTCOMES)
+# 9. EXPORT TABLE 3 (SURGICAL OUTCOMES)
 # ==============================================================================
 
 # Build Table 3 wide format
@@ -621,7 +881,7 @@ writeLines(md3_lines, "surgical_outcomes_table_wide_generated.md")
 cat("Table 3 markdown saved to: surgical_outcomes_table_wide_generated.md\n\n")
 
 # ==============================================================================
-# 9. RUN TABLE 4 ANALYSES (PATHOLOGY OUTCOMES)
+# 10. RUN TABLE 4 ANALYSES (PATHOLOGY OUTCOMES)
 # ==============================================================================
 
 cat(rep("=", 80), "\n", sep="")
@@ -639,7 +899,7 @@ binary_outcomes <- c(
 
 continuous_outcomes <- c(
   "margin_dist_initial_mm_clean",
-  "mass_initial_wedges_g",
+  "resection_mass",
   "specimen_mass"
 )
 
@@ -700,7 +960,7 @@ for (grp in groups) {
 }
 
 # ==============================================================================
-# 10. EXPORT TABLE 4 (PATHOLOGY)
+# 11. EXPORT TABLE 4 (PATHOLOGY)
 # ==============================================================================
 
 cat(rep("=", 80), "\n", sep="")
@@ -720,7 +980,7 @@ outcome_order <- c(
   "diagnostic_first_resection_binary",
   "margin_clear_first_resection_binary",
   "margin_dist_initial_mm_clean",
-  "mass_initial_wedges_g",
+  "resection_mass",
   "overall_margin_status_binary",
   "specimen_mass",
   "is_metastatic",
@@ -728,11 +988,10 @@ outcome_order <- c(
 )
 
 outcome_labels_table <- c(
-
-"diagnostic_first_resection_binary" = "First resection diagnostic (%)",
+  "diagnostic_first_resection_binary" = "First resection diagnostic (%)",
   "margin_clear_first_resection_binary" = "First resection margins clear (%)",
   "margin_dist_initial_mm_clean" = "Mean first resection margin distance, mm (SD)",
-  "mass_initial_wedges_g" = "Mean first resection mass, g (SD)",
+  "resection_mass" = "Mean first resection mass, g (SD)",
   "overall_margin_status_binary" = "Final margin clear (%)",
   "specimen_mass" = "Final mass tissue resected, g (SD)",
   "is_metastatic" = "Metastases resections (%)",
@@ -805,7 +1064,7 @@ writeLines(md_lines, "pathology_table_wide_generated.md")
 cat("Markdown table saved to: pathology_table_wide_generated.md\n\n")
 
 # ==============================================================================
-# 11. METHODOLOGY NOTES
+# 12. METHODOLOGY NOTES
 # ==============================================================================
 
 cat("\n\n", rep("=", 80), "\n", sep="")
