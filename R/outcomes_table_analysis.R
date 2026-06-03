@@ -441,10 +441,6 @@ if (balanced_after == nrow(smd_results)) {
   cat("   Consider PS model refinement or alternative methods\n\n")
 }
 
-# Save SMD table
-write.csv(smd_table, "iptw_smd_balance_table.csv", row.names = FALSE)
-cat("SMD balance table saved to: iptw_smd_balance_table.csv\n\n")
-
 # Create Love Plot
 cat("Creating Love Plot...\n")
 
@@ -514,6 +510,112 @@ ggplot(love_long_sorted, aes(x = Abs_SMD, y = Variable_Label, color = Timing, sh
 
 dev.off()
 cat("Love plot saved to: love_plot_smd.png\n\n")
+
+# ==============================================================================
+# 5b. BALANCE TABLE (Table 1): per-group mean(SD)/n(%), pre- and post-IPTW
+# ==============================================================================
+#
+# Reuses df_balance and smd_results from above so the SMD columns here are
+# IDENTICAL to the love plot. Weighted columns use iptw_weight (raw ATE), the
+# same weight used for smd_results. NOTE: stabilized_weight yields identical
+# SMDs (stabilization is a within-group constant rescale), so this table also
+# corresponds to the stabilized-weight outcome analyses.
+
+cat(rep("=", 80), "\n", sep="")
+cat("BALANCE TABLE (Table 1)\n")
+cat(rep("=", 80), "\n\n")
+
+# Human-readable labels (match love plot)
+balance_labels <- c(
+  age = "Age, years",
+  is_f = "Female",
+  nod_size = "Nodule size, mm",
+  dist_from_pleur_prox = "Proximal pleural distance, mm",
+  dist_from_pleur_distal = "Distal pleural distance, mm",
+  fev_perc_pred = "FEV1, % predicted",
+  dlco_perc_pred = "DLCO, % predicted",
+  fvc_perc_pred = "FVC, % predicted",
+  smoking_status = "Smoking history",
+  prior_thoracic_radiation = "Prior thoracic radiation",
+  prior_thoracic_surgery = "Prior thoracic surgery",
+  is_solid = "Solid nodule"
+)
+
+bal_marked   <- df_balance[df_balance$marked, ]
+bal_unmarked <- df_balance[!df_balance$marked, ]
+n_bal_marked   <- nrow(bal_marked)
+n_bal_unmarked <- nrow(bal_unmarked)
+
+# Cell formatters
+fmt_cont_unwt <- function(x) sprintf("%.1f (%.1f)", mean(x, na.rm = TRUE), sd(x, na.rm = TRUE))
+fmt_cont_wt   <- function(x, w) sprintf("%.1f (%.1f)", weighted.mean(x, w, na.rm = TRUE),
+                                        sqrt(Hmisc::wtd.var(x, w, na.rm = TRUE)))
+# Binary: percent only (no parentheses; parentheses reserved for SD)
+fmt_bin_unwt  <- function(x) sprintf("%.0f%%", 100 * mean(x, na.rm = TRUE))
+# Weighted binary: weighted % only (pseudo-population counts omitted as
+# non-integer and potentially misleading; standard in IPTW literature)
+fmt_bin_wt    <- function(x, w) sprintf("%.0f%%", 100 * weighted.mean(x, w, na.rm = TRUE))
+
+balance_rows <- lapply(ps_covariates, function(v) {
+  is_cont <- v %in% continuous_vars
+  if (is_cont) {
+    m_pre <- fmt_cont_unwt(bal_marked[[v]]);   u_pre <- fmt_cont_unwt(bal_unmarked[[v]])
+    m_post <- fmt_cont_wt(bal_marked[[v]], bal_marked$iptw_weight)
+    u_post <- fmt_cont_wt(bal_unmarked[[v]], bal_unmarked$iptw_weight)
+  } else {
+    m_pre <- fmt_bin_unwt(bal_marked[[v]]);    u_pre <- fmt_bin_unwt(bal_unmarked[[v]])
+    m_post <- fmt_bin_wt(bal_marked[[v]], bal_marked$iptw_weight)
+    u_post <- fmt_bin_wt(bal_unmarked[[v]], bal_unmarked$iptw_weight)
+  }
+  s <- smd_results[smd_results$Variable == v, ]
+  data.frame(
+    Characteristic    = unname(balance_labels[v]),
+    Marked_PreIPTW    = m_pre,
+    Unmarked_PreIPTW  = u_pre,
+    SMD_PreIPTW       = round(s$SMD_Unweighted, 3),
+    Marked_PostIPTW   = m_post,
+    Unmarked_PostIPTW = u_post,
+    SMD_PostIPTW      = round(s$SMD_Weighted, 3),
+    stringsAsFactors  = FALSE
+  )
+})
+
+balance_table <- do.call(rbind, balance_rows) %>%
+  arrange(desc(abs(SMD_PreIPTW)))
+
+cat("Continuous: mean (SD); Binary: n (%) pre-IPTW, weighted % post-IPTW\n")
+cat(rep("-", 80), "\n", sep="")
+print(balance_table, row.names = FALSE)
+cat("\n")
+
+# Save CSV
+write.csv(balance_table, "balance_table_pre_post_iptw.csv", row.names = FALSE)
+cat("Balance table CSV saved to: balance_table_pre_post_iptw.csv\n")
+
+# Generate markdown (matches Table 3/4 .md convention)
+md_bal <- c(
+  "## Table 1. Covariate Balance: Marked vs Unmarked, Pre- and Post-IPTW",
+  "",
+  paste0("| | Pre-IPTW (unweighted) | | | Post-IPTW (IPTW-weighted) | | |"),
+  paste0("| **Characteristic** | **Marked (N=", n_bal_marked, ")** | **Unmarked (N=",
+         n_bal_unmarked, ")** | **SMD** | **Marked** | **Unmarked** | **SMD** |"),
+  "|---|---|---|---|---|---|---|"
+)
+for (i in seq_len(nrow(balance_table))) {
+  r <- balance_table[i, ]
+  md_bal <- c(md_bal, paste0(
+    "| ", r$Characteristic, " | ", r$Marked_PreIPTW, " | ", r$Unmarked_PreIPTW,
+    " | ", sprintf("%.3f", r$SMD_PreIPTW), " | ", r$Marked_PostIPTW, " | ",
+    r$Unmarked_PostIPTW, " | ", sprintf("%.3f", r$SMD_PostIPTW), " |"))
+}
+md_bal <- c(md_bal, "",
+  paste0("**Note:** Continuous variables reported as mean (SD); binary variables as ",
+         "percent (unweighted pre-IPTW, weighted post-IPTW). Parentheses denote SD. ",
+         "SMD = standardized mean difference; ",
+         "|SMD| < 0.1 indicates balance. Post-IPTW columns use inverse-probability-of-",
+         "treatment weights on the common-support sample."))
+writeLines(md_bal, "balance_table_pre_post_iptw_generated.md")
+cat("Balance table markdown saved to: balance_table_pre_post_iptw_generated.md\n\n")
 
 # ==============================================================================
 # 6. ANALYSIS FUNCTIONS

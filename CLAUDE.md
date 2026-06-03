@@ -17,23 +17,21 @@ nodule-marking/
 
 ## Running Scripts
 
-Scripts expect data file in `data/`. Run from the project root directory:
+The script expects the data file in `data/`. Run from the project root directory:
 
 ```bash
-Rscript R/IPTW_complete_analysis.R
-Rscript R/multivariable_logistic_regression_RATS_VATS.R
+Rscript R/outcomes_table_analysis.R
 ```
 
 Or in R/RStudio:
 ```r
-source("R/IPTW_complete_analysis.R")
+source("R/outcomes_table_analysis.R")
 ```
 
 ## Required R Packages
 
-- **Data/modeling**: tidyverse, broom, survey, tableone, Hmisc
-- **Diagnostics**: pROC, car, ResourceSelection, DescTools
-- **Visualization**: forestplot
+- **Data/modeling**: tidyverse, broom, survey, Hmisc
+- **Visualization**: ggplot2 (via tidyverse)
 
 ## Data
 
@@ -47,23 +45,23 @@ Key variables:
 
 ## Analysis Scripts
 
-**R/IPTW_complete_analysis.R** - Inverse Probability of Treatment Weighting
-- Propensity score model with 12 covariates
-- ATE and stabilized weights calculation
-- Covariate balance assessment via SMD
-- Survey design object for weighted outcome analysis
-- Outputs: iptw_dataset_with_weights.csv, iptw_smd_balance.csv, propensity_score_model_results.csv
+**R/outcomes_table_analysis.R** - Generates publication tables 3 & 4 (the only maintained script)
 
-**R/multivariable_logistic_regression_RATS_VATS.R** - Predictors of marking
-- Separate RATS vs VATS analyses
-- Log-transformed variables: nod_size_log, dist_deep_log, brock_log
-- Diagnostics: VIF, Hosmer-Lemeshow, pseudo R-squared, ROC/AUC
-- Outputs: *_marking_predictors_results.csv, marking_prediction_roc_curves.png, marking_predictors_forest_plot.png
+Pipeline:
+- Filters to RATS/VATS; derives margin binaries, `is_metastatic`, `is_benign`
+- Propensity score model with 12 covariates (see Data section)
+- Common support trimming (`in_common_support` flag)
+- ATE weights and stabilized weights; stabilized weights used in all outcome models
+- Covariate balance via SMD (unweighted vs IPTW-weighted)
+- Per outcome, two adjustment methods: IPTW-weighted (primary) + multivariable regression (sensitivity)
+- Descriptives from the full sample; adjusted effects from the trimmed sample
+- Analyzes RATS, VATS, and pooled cohorts (pooled adjusts for surgical approach)
 
-**R/pathology_table_analysis.R** - Pathology outcomes (Table 4)
-- Analyzes RATS, VATS, and pooled cohorts
-- Binary outcomes: diagnostic first resection, margin clear, metastatic, benign
-- Continuous outcomes: margin distance, resection mass, specimen mass
-- Both IPTW-weighted (primary) and multivariable-adjusted (sensitivity) estimates
-- Common support trimming for IPTW
-- Outputs: pathology_table_results.csv
+Table 3 outcomes (surgical): length of stay, persistent air leak, incision-to-close time, localization failure, conversion to open.
+Table 4 outcomes (pathology): first resection diagnostic, margins clear, margin distance, resection mass, final margin status, specimen mass, metastatic, benign.
+
+Outputs: `surgical_outcomes_table_wide.csv`/`.md`, `pathology_table_wide.csv`/`.md`, `pathology_table_results.csv`, `propensity_score_distribution.png`, `love_plot_smd.png`.
+
+### Known caveats (do not "fix" silently)
+- **Residual imbalance**: after IPTW, 5/12 covariates remain |SMD| ≥ 0.1 (max ≈ 0.15: FVC, prior radiation, female). IPTW resolves the largest baseline imbalances but worsens a few smaller ones; the "balanced count" is unchanged before/after by coincidence, not because weighting failed. Documented limitation, not a bug.
+- **MV separation**: the multivariable sensitivity models emit many `glm.fit: fitted probabilities 0/1` warnings from separation on sparse binary outcomes (e.g. conversion, metastatic). Those MV odds ratios are unstable. IPTW is the primary estimate; MV is sensitivity only.

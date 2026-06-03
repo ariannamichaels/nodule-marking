@@ -1,0 +1,19 @@
+## Table 1. Covariate Balance: Marked vs Unmarked, Pre- and Post-IPTW
+
+| | Pre-IPTW (unweighted) | | | Post-IPTW (IPTW-weighted) | | |
+| **Characteristic** | **Marked (N=46)** | **Unmarked (N=77)** | **SMD** | **Marked** | **Unmarked** | **SMD** |
+|---|---|---|---|---|---|---|
+| Solid nodule | 74% | 86% | -0.297 | 86% | 82% | 0.128 |
+| Prior thoracic surgery | 13% | 23% | -0.270 | 20% | 18% | 0.059 |
+| DLCO, % predicted | 81.6 (18.3) | 77.7 (18.7) | 0.211 | 76.9 (18.8) | 78.8 (18.4) | -0.102 |
+| FEV1, % predicted | 87.2 (20.5) | 83.9 (17.9) | 0.171 | 85.2 (20.4) | 85.3 (17.1) | -0.004 |
+| Proximal pleural distance, mm | 10.2 (8.7) | 9.1 (9.7) | 0.123 | 10.2 (7.8) | 10.3 (10.4) | -0.009 |
+| Female | 52% | 57% | -0.100 | 61% | 56% | 0.115 |
+| FVC, % predicted | 95.4 (17.2) | 93.7 (17.6) | 0.099 | 97.2 (16.8) | 94.7 (16.7) | 0.152 |
+| Prior thoracic radiation | 9% | 6% | 0.083 | 11% | 7% | 0.132 |
+| Age, years | 64.3 (9.9) | 63.5 (10.5) | 0.079 | 63.5 (10.3) | 63.9 (10.2) | -0.037 |
+| Distal pleural distance, mm | 20.8 (10.5) | 20.3 (11.3) | 0.048 | 21.1 (9.4) | 21.1 (11.8) | 0.001 |
+| Smoking history | 70% | 71% | -0.041 | 69% | 68% | 0.011 |
+| Nodule size, mm | 12.7 (4.3) | 12.8 (5.7) | -0.033 | 12.6 (4.1) | 12.6 (5.5) | 0.005 |
+
+**Note:** Continuous variables reported as mean (SD); binary variables as percent (unweighted pre-IPTW, weighted post-IPTW). Parentheses denote SD. SMD = standardized mean difference; |SMD| < 0.1 indicates balance. Post-IPTW columns use inverse-probability-of-treatment weights on the common-support sample.
