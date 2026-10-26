@@ -45,7 +45,9 @@ Key variables:
 
 ## Analysis Scripts
 
-**R/outcomes_table_analysis.R** - Generates publication tables 3 & 4 (the only maintained script)
+**R/sensitivity_supplementary_tables.R** - Supplementary Tables 2 (analyzed vs excluded) and 3 (sensitivity: doubly robust, overlap weights, PS without PFTs). Sources the main script, so it also regenerates Tables 3 & 4.
+
+**R/outcomes_table_analysis.R** - Generates publication tables 3 & 4
 
 Pipeline:
 - Filters to RATS/VATS; derives margin binaries, `is_metastatic`, `is_benign`
